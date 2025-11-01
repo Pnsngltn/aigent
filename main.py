@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -39,26 +40,39 @@ def main(*args):
     messages = [
         types.Content(role="user", parts=[types.Part(text=user_prompt)]),
     ]
-    response = client.models.generate_content(
-        model=model_name, 
-        contents=messages, 
-        config=types.GenerateContentConfig(tools=[available_functions],
-        system_instruction=SYSTEM_PROMPT),
-    )
 
-    if response.function_calls:
-        for fc in response.function_calls:
-            function_call_result = call_function(fc, verbose=verbose)
-
-            try:
-                tool_resp = function_call_result.parts[0].function_response.response
-            except Exception:
-                raise RuntimeError("Tool call returned invalid response shape")
+    i = 0
+    while i < 20:
         
+        try:
+            response = client.models.generate_content(
+                model=model_name, 
+                contents=messages, 
+                config=types.GenerateContentConfig(tools=[available_functions],
+                system_instruction=SYSTEM_PROMPT),
+            )
+        
+            for candidate in response.candidates:
+                messages.append(candidate.content)
+
+            if response.function_calls:
+                for fc in response.function_calls:
+                    function_call_result = call_function(fc, verbose=verbose)
+                    messages.append(function_call_result)
+                
+                    if verbose:
+                        print(f"-> tool {fc.name} finished")
+            
+                i += 1
+                continue
+
+            if response.text:
+                print(response.text)
+                break
+        except Exception as e:
             if verbose:
-                print(f"-> {tool_resp}")
-    else:
-        print(response.text)
+                print(f"Error: {e}")
+        i += 1
 
 
 if __name__ == "__main__":
